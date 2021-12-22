@@ -17,6 +17,12 @@ You are able to activate the environment:
 ```bash
 conda activate molgan-pt
 ```
+## To do 
+- [x] check graident behavior -> MolGAN's gradient value scale is similar to the classifier's graident value
+- [ ] check generator behavior (if it generates similar distribution as the training data)
+- [ ] freeze generator weight to see if the discriminator can converge
+- [ ] change discriinator loss function (now is using l1, maybe change to cross entropy, but the architeucre might need to be changed)
+- [ ] change architecutre in q_discriminator.py (adding more connections between first layer and the 2nd layer) 
 
 ## Download GDB-9 Dataset
 
