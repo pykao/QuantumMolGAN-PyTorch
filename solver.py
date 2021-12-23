@@ -572,12 +572,16 @@ class Solver(object):
 
 
             ########## Frechet distribution ##########
-            R = [list(a[i].reshape(-1))  for i in range(self.batch_size)]
-            F = [list(edges_hard[i].reshape(-1))  for i in range(self.batch_size)]
+            (edges_hard, nodes_hard) = self.postprocess((edges_logits, nodes_logits), 'hard_gumbel')
+            edges_hard, nodes_hard = torch.max(edges_hard, -1)[1], torch.max(nodes_hard, -1)[1]
+            R = [list(a[i].reshape(-1).to('cpu'))  for i in range(self.batch_size)]
+            F = [list(edges_hard[i].reshape(-1).to('cpu'))  for i in range(self.batch_size)]
+            #F =  F.cpu()
             fd_bond = frdist(R, F)
+            print(fd_bond)
 
-            R=[list(x[i]) + list(a[i].reshape(-1))  for i in range(self.batch_size)]
-            F=[list(nodes_hard[i]) + list(edges_hard[i].reshape(-1))  for i in range(self.batch_size)]
+            R=[list(x[i].to('cpu')) + list(a[i].reshape(-1).to('cpu'))  for i in range(self.batch_size)]
+            F=[list(nodes_hard[i].to('cpu')) + list(edges_hard[i].reshape(-1).to('cpu'))  for i in range(self.batch_size)]
             fd_bond_atom = frdist(R, F)
 
             loss_tb['FD/bond'] = fd_bond
