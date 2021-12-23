@@ -578,7 +578,6 @@ class Solver(object):
             F = [list(edges_hard[i].reshape(-1).to('cpu'))  for i in range(self.batch_size)]
             #F =  F.cpu()
             fd_bond = frdist(R, F)
-            print(fd_bond)
 
             R=[list(x[i].to('cpu')) + list(a[i].reshape(-1).to('cpu'))  for i in range(self.batch_size)]
             F=[list(nodes_hard[i].to('cpu')) + list(edges_hard[i].reshape(-1).to('cpu'))  for i in range(self.batch_size)]
