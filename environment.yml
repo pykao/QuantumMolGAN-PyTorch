@@ -152,7 +152,7 @@ dependencies:
     - pandocfilters==1.4.3
     - parso==0.8.2
     - pbr==5.6.0
-    - pennylane==0.18.0
+    - pennylane==0.20.0
     - pennylane-lightning==0.18.0
     - pexpect==4.8.0
     - pickleshare==0.7.5
