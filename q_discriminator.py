@@ -23,20 +23,20 @@ MEASURED_QUBIT_2ND_IDX = 7#int(sys.argv[2])
 
 @qml.qnode(dev, interface="torch", diff_method="backprop")
 def qnode(inputs, weights):
-    qml.templates.AngleEmbedding(inputs, wires=range(n_qubits))
+    qml.templates.AmplitudeEmbedding(inputs, wires=range(n_qubits), pad_with=0.001, normalize=(True))
     qml.templates.StronglyEntanglingLayers(weights, wires=range(n_qubits))
     return [qml.expval(qml.PauliZ(wires=MEASURED_QUBIT_IDX))]
 
 @qml.qnode(dev1, interface="torch", diff_method="backprop")
 def qnode_(inputs, weights):
-    qml.templates.AngleEmbedding(inputs, wires=range(n_2nd_qubits))
+    qml.templates.AmplitudeEmbedding(inputs, wires=range(n_2nd_qubits), pad_with=0.001, normalize=(True))
     qml.templates.StronglyEntanglingLayers(weights, wires=range(n_2nd_qubits))
     return [qml.expval(qml.PauliZ(wires=i)) for i in range(MEASURED_QUBIT_2ND_IDX, MEASURED_QUBIT_2ND_IDX+1)]
 
 @qml.qnode(dev2, interface="torch", diff_method="backprop")
 def qnode__(inputs, weights):
 
-    qml.templates.AngleEmbedding(inputs, wires=range(n_3rd_qubits))
+    qml.templates.AmplitudeEmbedding(inputs, wires=range(n_3rd_qubits), pad_with=0.001, normalize=(True))
     qml.templates.StronglyEntanglingLayers(weights, wires=range(n_3rd_qubits))
     return [qml.expval(qml.PauliZ(wires=i)) for i in [2, 3]]
 
