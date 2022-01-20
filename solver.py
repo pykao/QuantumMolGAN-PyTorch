@@ -480,6 +480,12 @@ class Solver(object):
                         print('optimizing D')
                         #####################################################
                         '''
+                        for name, param in self.G.named_parameters():
+                            if param.requires_grad:
+                                print (name, param.grad)
+                            break
+                        print("'optimizing G")
+
                 else:
                     # training G for n_critic-1 times followed by D one time
                     if (cur_step != 0) and (cur_step % self.n_critic == 0):
@@ -534,7 +540,7 @@ class Solver(object):
             print('d_loss {:.2f} d_fake {:.2f} d_real {:.2f} g_loss: {:.2f}'.format(loss_D.item(), d_loss_fake.item(), d_loss_real.item(), loss_G.item()))
             print('======================= {} =============================='.format(datetime.datetime.now()), flush = True)
             alpha = torch.abs(loss_G.detach() / loss_RL.detach()).detach()
-            train_step_G = cur_la * loss_G + (1.0 - cur_la) * alpha * loss_RL
+            train_step_G = cur_la * loss_G# + (1.0 - cur_la) * alpha * loss_RL
 
             train_step_V = loss_V
 
