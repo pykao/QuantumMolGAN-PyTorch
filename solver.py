@@ -485,7 +485,6 @@ class Solver(object):
                                 print (name, param.grad)
                             break
                         print("'optimizing G")
-
                 else:
                     # training G for n_critic-1 times followed by D one time
                     if (cur_step != 0) and (cur_step % self.n_critic == 0):
