@@ -106,7 +106,7 @@ if __name__ == '__main__':
     # the complexity of generator
     config.complexity = 'mr'
     # batch size
-    config.batch_size = 16
+    config.batch_size = 32
     # input noise dimension
     config.z_dim = 8
     # number of epoch
@@ -114,7 +114,7 @@ if __name__ == '__main__':
     # n_critic
     config.n_critic = 3
     # critic type
-    config.critic_type = 'D'
+    config.critic_type = 'G'
     # 1.0 for pure WGAN and 0.0 for pure RL
     config.lambda_wgan = 1
     # weight decay

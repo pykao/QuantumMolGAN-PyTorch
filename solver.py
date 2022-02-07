@@ -18,7 +18,7 @@ from models.models import Generator, Discriminator
 from data.sparse_molecular_dataset import SparseMolecularDataset
 from utils.logger import Logger
 
-from q_discriminator import HybridModel
+from q_discriminator_v2 import HybridModel
 
 from frechetdist import frdist
 
@@ -102,7 +102,8 @@ class Solver(object):
             self.logger = Logger(config.log_dir_path)
 
         # GPU
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        #self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = 'cpu'
         print('Device: ', self.device, flush = True)
 
         # Directories
@@ -160,7 +161,7 @@ class Solver(object):
         # Optimizers can be RMSprop or Adam
         self.g_optimizer = torch.optim.RMSprop(self.G.parameters(), self.g_lr)
         #self.d_optimizer = torch.optim.RMSprop(self.D.parameters(), self.d_lr)
-        self.d_optimizer = torch.optim.SGD(self.D.parameters(), lr=0.2) #0.2
+        self.d_optimizer = torch.optim.SGD(self.D.parameters(), lr=0.1) #0.2
         self.v_optimizer = torch.optim.RMSprop(self.V.parameters(), self.g_lr)
 
         # Print the networks
@@ -474,24 +475,23 @@ class Solver(object):
                         self.d_optimizer.step()
                         '''
                         ### here is to check discriminator gradient value ###
-                        for i, param in enumerate(self.D.parameters()):
+                        for i, param in enumerate(self.G.parameters()):
                             print(param.grad)
                             break
                         print('optimizing D')
                         #####################################################
-                        '''
                         for name, param in self.G.named_parameters():
                             if param.requires_grad:
                                 print (name, param.grad)
                             break
                         print("'optimizing G")
+                        '''
                 else:
                     # training G for n_critic-1 times followed by D one time
                     if (cur_step != 0) and (cur_step % self.n_critic == 0):
                         self.reset_grad()
                         loss_D.backward()
                         self.d_optimizer.step()
-                        print('-') 
             ########## Train the generator ##########
 
             # Z-to-target
@@ -559,7 +559,7 @@ class Solver(object):
                             self.g_optimizer.step()
                 else:
                     # training G for n_critic-1 times followed by D one time
-                    if (cur_step == 0) or (cur_step % self.n_critic != 0):
+                    if (cur_step != 0) or (cur_step % self.n_critic != 0):
                         self.reset_grad()
                         if cur_la < 1.0:
                             train_step_G.backward(retain_graph=True)
@@ -569,7 +569,6 @@ class Solver(object):
                         else:
                             train_step_G.backward(retain_graph=True)
                             self.g_optimizer.step()
-
 
             if train_val_test == 'train' and self.use_tensorboard:
                 for tag, value in loss_tb.items():
@@ -608,7 +607,8 @@ class Solver(object):
 
 
             # Get scores
-            if train_val_test == 'val':
+            #if train_val_test == 'val':
+            if a_step % 10 == 0:
                 mols = self.get_gen_mols(nodes_logits, edges_logits, self.post_method)
                 m0, m1 = all_scores(mols, self.data, norm=True)  # 'mols' is output of Fake Reward
                 for k, v in m1.items():
