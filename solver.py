@@ -15,6 +15,7 @@ import torch.nn.functional as F
 import datetime
 from utils.utils import *
 from models.models import Generator, Discriminator
+from models.q_generator import PatchQuantumGenerator
 from data.sparse_molecular_dataset import SparseMolecularDataset
 from utils.logger import Logger
 
@@ -33,6 +34,8 @@ def upper(m, a):
     res = torch.cat((res, a), dim=1)
     return res        
 
+def wasserstein_loss(y_true, y_pred):
+	return torch.mean(y_true * y_pred)
 
 class Solver(object):
     """Solver for training and testing MolGAN"""
@@ -102,7 +105,7 @@ class Solver(object):
             self.logger = Logger(config.log_dir_path)
 
         # GPU
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device("cpu")#torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print('Device: ', self.device, flush = True)
 
         # Directories
@@ -147,31 +150,32 @@ class Solver(object):
         """Create a generator, a discriminator and a v net"""
 
         # Models
-        self.G = Generator(self.g_conv_dim, self.z_dim,
-                           self.data.vertexes,
-                           self.data.bond_num_types,
-                           self.data.atom_num_types,
-                           self.dropout)
-        #self.D = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
+        # self.G = Generator(self.g_conv_dim, self.z_dim,
+        #                     self.data.vertexes,
+        #                     self.data.bond_num_types,
+        #                     self.data.atom_num_types,
+        #                     self.dropout)
+        self.G = PatchQuantumGenerator(n_generators=90)
+        # self.D = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
         #self.V = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
         self.D = HybridModel(LAYER3=True)
-        self.V = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
+        # self.V = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
 
         # Optimizers can be RMSprop or Adam
         self.g_optimizer = torch.optim.RMSprop(self.G.parameters(), self.g_lr)
         #self.d_optimizer = torch.optim.RMSprop(self.D.parameters(), self.d_lr)
         self.d_optimizer = torch.optim.SGD(self.D.parameters(), lr=0.2) #0.2
-        self.v_optimizer = torch.optim.RMSprop(self.V.parameters(), self.g_lr)
+        # self.v_optimizer = torch.optim.RMSprop(self.V.parameters(), self.g_lr)
 
         # Print the networks
         self.print_network(self.G, 'G', self.log)
         self.print_network(self.D, 'D', self.log)
-        self.print_network(self.V, 'V', self.log)
+        # self.print_network(self.V, 'V', self.log)
 
         # Bring the network to GPU
         self.G.to(self.device)
         self.D.to(self.device)
-        self.V.to(self.device)
+        # self.V.to(self.device)
 
     @staticmethod
     def print_network(model, name, log=None):
@@ -192,10 +196,10 @@ class Solver(object):
         print('Loading the trained models from step {}...'.format(resume_iters))
         G_path = os.path.join(self.model_dir_path, '{}-G.ckpt'.format(resume_iters))
         D_path = os.path.join(self.model_dir_path, '{}-D.ckpt'.format(resume_iters))
-        V_path = os.path.join(self.model_dir_path, '{}-V.ckpt'.format(resume_iters))
+        # V_path = os.path.join(self.model_dir_path, '{}-V.ckpt'.format(resume_iters))
         self.G.load_state_dict(torch.load(G_path, map_location=lambda storage, loc: storage))
         self.D.load_state_dict(torch.load(D_path, map_location=lambda storage, loc: storage))
-        self.V.load_state_dict(torch.load(V_path, map_location=lambda storage, loc: storage))
+        # self.V.load_state_dict(torch.load(V_path, map_location=lambda storage, loc: storage))
 
     def load_gen_weights(self, resume_iters):
         """Restore the trained quantum circuit"""
@@ -214,7 +218,7 @@ class Solver(object):
         """Reset the gradient buffers"""
         self.g_optimizer.zero_grad()
         self.d_optimizer.zero_grad()
-        self.v_optimizer.zero_grad()
+        # self.v_optimizer.zero_grad()
 
     def gradient_penalty(self, y, x):
         """Compute gradient penalty: (L2_norm(dy/dx) - 1)**2."""
@@ -332,10 +336,10 @@ class Solver(object):
         """store the models and quantum circuit"""
         G_path = os.path.join(self.model_dir_path, '{}-G.ckpt'.format(epoch_i + 1))
         D_path = os.path.join(self.model_dir_path, '{}-D.ckpt'.format(epoch_i + 1))
-        V_path = os.path.join(self.model_dir_path, '{}-V.ckpt'.format(epoch_i + 1))
+        # V_path = os.path.join(self.model_dir_path, '{}-V.ckpt'.format(epoch_i + 1))
         torch.save(self.G.state_dict(), G_path)
         torch.save(self.D.state_dict(), D_path)
-        torch.save(self.V.state_dict(), V_path)
+        # torch.save(self.V.state_dict(), V_path)
         # save quantum weights
         if self.quantum:
             with open(os.path.join(self.model_dir_path, 'molgan_red_weights.csv'), 'a') as file:
@@ -368,7 +372,7 @@ class Solver(object):
                 print('[Testing]')
             else:
                 raise NotImplementedError
-        d_loss = torch.nn.L1Loss()
+        d_loss = torch.nn.L1Loss() #modified for wasserstein
         for a_step in range(the_step):
 
             # non-Quantum part
@@ -421,18 +425,26 @@ class Solver(object):
             ########## Train the discriminator ##########
         
             # compute loss with real inputs
-            #logits_real, features_real = self.D(a_tensor, None, x_tensor)
-            logits_real = self.D(ax_tensor)
+            # logits_real, features_real = self.D(a_tensor, None, x_tensor) #// C dis
+            logits_real = self.D(ax_tensor)   #// Q dis
             target_real = torch.ones((ax_tensor.shape[0],  1)).to(self.device).long()
             target_real = self.label2onehot(target_real, 2)
             
             # Z-to-target
-            edges_logits, nodes_logits = self.G(z)
-            # Postprocess with Gumbel softmax
-            (edges_hat, nodes_hat) = self.postprocess((edges_logits, nodes_logits), self.post_method)
-            #logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)
-            ax_fake_tensor = upper(edges_hat, nodes_hat)            
-            logits_fake = self.D(ax_fake_tensor) 
+            
+# =============================================================================
+#             # classical generator
+#             edges_logits, nodes_logits = self.G(z)
+#             # Postprocess with Gumbel softmax
+#             (edges_hat, nodes_hat) = self.postprocess((edges_logits, nodes_logits), self.post_method)
+#             # end of classical generator
+# =============================================================================
+            # quantum generator
+            edges_hat, nodes_hat = self.G(z)
+            # end of quantum generator
+            ax_fake_tensor = upper(edges_hat, nodes_hat)      #// Q dis
+            logits_fake = self.D(ax_fake_tensor)   #// Q dis
+            # logits_fake, features_fake = self.D(edges_hat, None, nodes_hat) # // C dis      
             target_fake = torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
             target_fake = self.label2onehot(target_fake, 2)
 
@@ -450,7 +462,7 @@ class Solver(object):
             '''
             d_loss_real = d_loss(logits_real, target_real)
             d_loss_fake = d_loss(logits_fake, target_fake)
-            loss_D = d_loss_real + d_loss_fake 
+            loss_D = d_loss_real + d_loss_fake #modified for wasserstein
 
             if cur_la > 0:
                 losses['D/loss_real'].append(d_loss_real.item())
@@ -480,7 +492,7 @@ class Solver(object):
                         print('optimizing D')
                         #####################################################
                         '''
-                        for name, param in self.G.named_parameters():
+                        for name, param in reversed(list(self.G.named_parameters())):
                             if param.requires_grad:
                                 print (name, param.grad)
                             break
@@ -495,53 +507,61 @@ class Solver(object):
             ########## Train the generator ##########
 
             # Z-to-target
-            edges_logits, nodes_logits = self.G(z)
-            # Postprocess with Gumbel softmax
-            (edges_hat, nodes_hat) = self.postprocess((edges_logits, nodes_logits), self.post_method)
-            #logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)
-            ax_fake_tensor = upper(edges_hat, nodes_hat)            
-            logits_fake = self.D(ax_fake_tensor) 
+# =============================================================================
+#             # classical generator
+#             edges_logits, nodes_logits = self.G(z)
+#             # Postprocess with Gumbel softmax
+#             (edges_hat, nodes_hat) = self.postprocess((edges_logits, nodes_logits), self.post_method)
+#             # end of classical generator
+# =============================================================================
+            # quantum generator
+            edges_hat, nodes_hat = self.G(z)
+            # end of quantum generator
+            ax_fake_tensor = upper(edges_hat, nodes_hat) #// Q dis
+            logits_fake = self.D(ax_fake_tensor)         #// Q dis
+            # logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)   #// C dis
+            
             target_fake = torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
             target_fake = self.label2onehot(target_fake, 2)
 
             # Value losses (RL)
-            value_logit_real, _ = self.V(a_tensor, None, x_tensor, torch.sigmoid)
-            value_logit_fake, _ = self.V(edges_hat, None, nodes_hat, torch.sigmoid)
+            # value_logit_real, _ = self.V(a_tensor, None, x_tensor, torch.sigmoid)
+            # value_logit_fake, _ = self.V(edges_hat, None, nodes_hat, torch.sigmoid)
 
             # Feature mapping losses. Not used anywhere in the PyTorch version.
             # I include it here for the consistency with the TF code.
             #f_loss = (torch.mean(features_real, 0) - torch.mean(features_fake, 0)) ** 2
 
             # Real Reward
-            reward_r = torch.from_numpy(self.reward(mols)).to(self.device)
+            # reward_r = torch.from_numpy(self.reward(mols)).to(self.device)
             # Fake Reward
-            reward_f = self.get_reward(nodes_hat, edges_hat, self.post_method)
+            # reward_f = self.get_reward(nodes_hat, edges_hat, self.post_method)
 
             # Losses Update
-            loss_G = -1* d_loss(logits_fake, target_fake)#-logits_fake
+            loss_G = -1* d_loss(logits_fake, target_fake)#-logits_fake #modified for wasserstein
             # Original TF loss_V. Here we use absolute values instead of the squared one.
             # loss_V = (value_logit_real - reward_r) ** 2 + (value_logit_fake - reward_f) ** 2
-            loss_V = torch.abs(value_logit_real - reward_r) + torch.abs(value_logit_fake - reward_f)
-            loss_RL = -value_logit_fake
+            # loss_V = torch.abs(value_logit_real - reward_r) + torch.abs(value_logit_fake - reward_f)
+            # loss_RL = -value_logit_fake
 
             loss_G = torch.mean(loss_G)
-            loss_V = torch.mean(loss_V)
-            loss_RL = torch.mean(loss_RL)
+            # loss_V = torch.mean(loss_V)
+            # loss_RL = torch.mean(loss_RL)
             losses['G/loss'].append(loss_G.item())
-            losses['RL/loss'].append(loss_RL.item())
-            losses['V/loss'].append(loss_V.item())
+            # losses['RL/loss'].append(loss_RL.item())
+            # losses['V/loss'].append(loss_V.item())
 
             # tensorboard
             loss_tb['G/loss'] = loss_G.item()
-            loss_tb['RL/loss'] = loss_RL.item()
-            loss_tb['V/loss'] = loss_V.item()
+            # loss_tb['RL/loss'] = loss_RL.item()
+            # loss_tb['V/loss'] = loss_V.item()
 
             print('d_loss {:.2f} d_fake {:.2f} d_real {:.2f} g_loss: {:.2f}'.format(loss_D.item(), d_loss_fake.item(), d_loss_real.item(), loss_G.item()))
             print('======================= {} =============================='.format(datetime.datetime.now()), flush = True)
-            alpha = torch.abs(loss_G.detach() / loss_RL.detach()).detach()
+            # alpha = torch.abs(loss_G.detach() / loss_RL.detach()).detach()
             train_step_G = cur_la * loss_G# + (1.0 - cur_la) * alpha * loss_RL
 
-            train_step_V = loss_V
+            # train_step_V = loss_V
 
             # Optimise generator and reward network
             if train_val_test == 'train':
@@ -553,7 +573,7 @@ class Solver(object):
                             train_step_G.backward(retain_graph=True)
                             train_step_V.backward()
                             self.g_optimizer.step()
-                            self.v_optimizer.step()
+                            # self.v_optimizer.step()
                         else:
                             train_step_G.backward(retain_graph=True)
                             self.g_optimizer.step()
@@ -563,9 +583,9 @@ class Solver(object):
                         self.reset_grad()
                         if cur_la < 1.0:
                             train_step_G.backward(retain_graph=True)
-                            train_step_V.backward()
+                            # train_step_V.backward()
                             self.g_optimizer.step()
-                            self.v_optimizer.step()
+                            # self.v_optimizer.step()
                         else:
                             train_step_G.backward(retain_graph=True)
                             self.g_optimizer.step()
@@ -577,7 +597,8 @@ class Solver(object):
 
 
             ########## Frechet distribution ##########
-            (edges_hard, nodes_hard) = self.postprocess((edges_logits, nodes_logits), 'hard_gumbel')
+            
+            (edges_hard, nodes_hard) = edges_hat, nodes_hat#self.postprocess((edges_logits, nodes_logits), 'hard_gumbel')
             edges_hard, nodes_hard = torch.max(edges_hard, -1)[1], torch.max(nodes_hard, -1)[1]
             R = [list(a[i].reshape(-1).to('cpu'))  for i in range(self.batch_size)]
             F = [list(edges_hard[i].reshape(-1).to('cpu'))  for i in range(self.batch_size)]
