@@ -155,7 +155,7 @@ class Solver(object):
         #                     self.data.bond_num_types,
         #                     self.data.atom_num_types,
         #                     self.dropout)
-        self.G = PatchQuantumGenerator(n_generators=90)
+        self.G = PatchQuantumGenerator(n_generators=45)
         # self.D = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
         #self.V = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
         self.D = HybridModel(LAYER3=True)
@@ -571,7 +571,7 @@ class Solver(object):
                         self.reset_grad()
                         if cur_la < 1.0:
                             train_step_G.backward(retain_graph=True)
-                            train_step_V.backward()
+                            # train_step_V.backward()
                             self.g_optimizer.step()
                             # self.v_optimizer.step()
                         else:

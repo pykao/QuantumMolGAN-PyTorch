@@ -3,11 +3,11 @@ import pennylane as qml
 import torch.nn as nn
 
 # Quantum variables
-n_qubits = 4  # Total number of qubits / N
+n_qubits = 5#4  # Total number of qubits / N
 n_a_qubits = 1  # Number of ancillary qubits / N_A
 q_depth = 6  # Depth of the parameterised quantum circuit / D
-n_generators = 90  # Number of subgenerators for the patch method / N_G# -*- coding: utf-8 -*-
-
+n_generators = 45#90  # Number of subgenerators for the patch method / N_G# -*- coding: utf-8 -*-
+patch_multiplier = 3
 # Quantum simulator
 # dev = qml.device("lightning.qubit", wires=n_qubits)
 dev = qml.device("default.qubit", wires=n_qubits)
@@ -46,9 +46,17 @@ def partial_measure(noise, weights):
     # Post-Processing
     # probsgiven = probsgiven0 / torch.max(probsgiven0)
     # return probsgiven
+    
+    ''' singular generator
     probsgiven5 = probs[:5]
     probsgiven5 /= torch.sum(probs)
     return torch.nn.functional.softmax(probsgiven5, -1)
+    '''
+    
+    probsgiven15 = probs[:15]
+    probsgiven15 /= torch.sum(probs)
+    q = torch.nn.functional.softmax(probsgiven15, -1)
+    return torch.cat((q[:5].float().unsqueeze(0)*patch_multiplier, q[5:10].float().unsqueeze(0)*patch_multiplier, q[10:15].float().unsqueeze(0)*patch_multiplier),0)
 
 
 class PatchQuantumGenerator(nn.Module):
@@ -62,13 +70,13 @@ class PatchQuantumGenerator(nn.Module):
         """
 
         super().__init__()
-        # tensor_mean = torch.full(size=(q_depth,n_qubits), fill_value=0, dtype=(torch.float32))
-        # tensor_std = torch.full(size=(q_depth, n_qubits), fill_value=1.05, dtype=(torch.float32))
+        tensor_mean = torch.full(size=(q_depth,n_qubits), fill_value=0, dtype=(torch.float32))
+        tensor_std = torch.full(size=(q_depth, n_qubits), fill_value=1.05, dtype=(torch.float32))
         self.q_params = nn.ParameterList(
             [
-                nn.Parameter(q_delta * torch.rand(q_depth * n_qubits), requires_grad=True)
-                # nn.Parameter(q_delta * torch.normal(mean=tensor_mean,std=tensor_std), requires_grad=True)
-                for _ in range(n_generators)
+                # nn.Parameter(q_delta * torch.rand(q_depth * n_qubits), requires_grad=True)
+                nn.Parameter(q_delta * torch.normal(mean=tensor_mean,std=tensor_std), requires_grad=True)
+                for _ in range(n_generators//patch_multiplier)
             ]
         )
         self.n_generators = n_generators
@@ -95,7 +103,7 @@ class PatchQuantumGenerator(nn.Module):
         
         return images
         '''
-        
+        ''' # 9 by 9 square matrix
         edges = torch.Tensor(x.size(0), 0).to(device)
         nodes = torch.Tensor(x.size(0), 0).to(device)
         for jj, elem in enumerate(x):
@@ -120,19 +128,48 @@ class PatchQuantumGenerator(nn.Module):
                 nodes = torch.cat((nodes, torch.unsqueeze( node,0)), 0)
         return edges, nodes
         '''
+        ''' # 45 nodes and edges in a row
         edges_nodes = torch.Tensor(x.size(0), 0).to(device)
         for jj, elem in enumerate(x):
-            patches_edges_nodes = torch.Tensor(0, patch_size).to(device)
+            # patches_edges_nodes = torch.Tensor(0, patch_size).to(device)
+            q_out_list = []
             for ii, params in enumerate(self.q_params):
-                q_out = partial_measure(elem, params).float().unsqueeze(0)
-                patches_edges_nodes = torch.cat((patches_edges_nodes, q_out))
- 
+                q_out = partial_measure(elem, params)
+                q_out_list.append(q_out)
+            edge_node = torch.cat(tuple(q_out_list))
             if jj == 0: 
-                edges_nodes = patches_edges_nodes
+                edges_nodes = edge_node
             elif jj == 1:
-                edges_nodes = torch.stack((edges_nodes, patches_edges_nodes), 0 ) 
+                edges_nodes = torch.stack((edges_nodes, edge_node), 0 ) 
             else: 
-                edges_nodes = torch.cat((edges_nodes, torch.unsqueeze( patches_edges_nodes, 0 ) ), 0) 
+                edges_nodes = torch.cat((edges_nodes, torch.unsqueeze( edge_node, 0 ) ), 0) 
         return edges_nodes
         '''
+        edges = torch.Tensor(x.size(0), 0).to(device)
+        nodes = torch.Tensor(x.size(0), 0).to(device)
+        a = torch.triu_indices(9, 9, offset=1)
+        for jj, elem in enumerate(x):
+            patches_edges_list = []
+            patches_nodes = torch.Tensor(0, patch_size).to(device)
+            for ii, params in enumerate(self.q_params):
+                q_out = partial_measure(elem, params)
+                if ii < 12:
+                    patches_edges_list.append(q_out)
+                else:
+                    patches_nodes = torch.cat((patches_nodes, q_out))
+            edge = torch.empty(9,9,5)
+            for ii, q in enumerate(torch.cat(tuple(patches_edges_list))):
+                row = a[0][ii]; col = a [1][ii]
+                edge[row][col][:] = q; edge[col][row][:] = q
+            node =  torch.reshape(patches_nodes, (9,5))
+            if jj == 0: 
+                edges =  edge
+                nodes =  node
+            elif jj == 1:
+                edges = torch.stack((edges, edge), 0) 
+                nodes = torch.stack((nodes, node), 0)
+            else: 
+                edges = torch.cat((edges, torch.unsqueeze( edge,0)), 0) 
+                nodes = torch.cat((nodes, torch.unsqueeze( node,0)), 0)
+        return edges, nodes
                     
