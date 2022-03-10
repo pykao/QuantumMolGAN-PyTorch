@@ -45,7 +45,9 @@ class Solver(object):
 
         # Log
         self.log = log
-
+        
+        # loss
+        self.wasserstein = True
         # Data loader
         self.data = SparseMolecularDataset()
         self.data.load(config.mol_data_dir)
@@ -156,15 +158,15 @@ class Solver(object):
         #                     self.data.atom_num_types,
         #                     self.dropout)
         self.G = PatchQuantumGenerator(n_generators=45)
-        # self.D = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
+        self.D = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
         #self.V = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
-        self.D = HybridModel(LAYER3=True)
+        # self.D = HybridModel(LAYER3=True)
         # self.V = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
 
         # Optimizers can be RMSprop or Adam
         self.g_optimizer = torch.optim.RMSprop(self.G.parameters(), self.g_lr)
-        #self.d_optimizer = torch.optim.RMSprop(self.D.parameters(), self.d_lr)
-        self.d_optimizer = torch.optim.SGD(self.D.parameters(), lr=0.2) #0.2
+        self.d_optimizer = torch.optim.RMSprop(self.D.parameters(), self.d_lr)
+        # self.d_optimizer = torch.optim.SGD(self.D.parameters(), lr=0.18) #0.2
         # self.v_optimizer = torch.optim.RMSprop(self.V.parameters(), self.g_lr)
 
         # Print the networks
@@ -425,11 +427,10 @@ class Solver(object):
             ########## Train the discriminator ##########
         
             # compute loss with real inputs
-            # logits_real, features_real = self.D(a_tensor, None, x_tensor) #// C dis
-            logits_real = self.D(ax_tensor)   #// Q dis
-            target_real = torch.ones((ax_tensor.shape[0],  1)).to(self.device).long()
-            target_real = self.label2onehot(target_real, 2)
-            
+            logits_real, features_real = self.D(a_tensor, None, x_tensor) #// C dis
+            # logits_real = self.D(ax_tensor)   #// Q dis
+            target_real = (torch.ones((ax_tensor.shape[0],  1))*-1).to(self.device).long() if self.wasserstein else torch.ones((ax_tensor.shape[0],  1)).to(self.device).long()
+            # target_real = self.label2onehot(target_real, 2)
             # Z-to-target
             
 # =============================================================================
@@ -442,11 +443,11 @@ class Solver(object):
             # quantum generator
             edges_hat, nodes_hat = self.G(z)
             # end of quantum generator
-            ax_fake_tensor = upper(edges_hat, nodes_hat)      #// Q dis
-            logits_fake = self.D(ax_fake_tensor)   #// Q dis
-            # logits_fake, features_fake = self.D(edges_hat, None, nodes_hat) # // C dis      
-            target_fake = torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
-            target_fake = self.label2onehot(target_fake, 2)
+            # ax_fake_tensor = upper(edges_hat, nodes_hat)      #// Q dis
+            # logits_fake = self.D(ax_fake_tensor)   #// Q dis
+            logits_fake, features_fake = self.D(edges_hat, None, nodes_hat) # // C dis      
+            target_fake = torch.ones((ax_tensor.shape[0],  1)).to(self.device).long() if self.wasserstein else torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
+            # target_fake = self.label2onehot(target_fake, 2)
 
             '''
             # Compute losses for gradient penalty
@@ -462,7 +463,7 @@ class Solver(object):
             '''
             d_loss_real = d_loss(logits_real, target_real)
             d_loss_fake = d_loss(logits_fake, target_fake)
-            loss_D = d_loss_real + d_loss_fake #modified for wasserstein
+            loss_D = torch.mean(d_loss_fake) - torch.mean(d_loss_real) if self.wasserstein else d_loss_real + d_loss_fake #modified for wasserstein
 
             if cur_la > 0:
                 losses['D/loss_real'].append(d_loss_real.item())
@@ -484,19 +485,24 @@ class Solver(object):
                         self.reset_grad()
                         loss_D.backward()
                         self.d_optimizer.step()
-                        '''
+                        
                         ### here is to check discriminator gradient value ###
                         for i, param in enumerate(self.D.parameters()):
-                            print(param.grad)
-                            break
+                            if self.wasserstein:
+                                param.data.clamp_(-0.01, 0.01)
+                            else:
+                                print(param.grad)
+                                break
                         print('optimizing D')
                         #####################################################
-                        '''
+                        
+                        
                         for name, param in reversed(list(self.G.named_parameters())):
                             if param.requires_grad:
                                 print (name, param.grad)
                             break
                         print("'optimizing G")
+                        
                 else:
                     # training G for n_critic-1 times followed by D one time
                     if (cur_step != 0) and (cur_step % self.n_critic == 0):
@@ -517,12 +523,12 @@ class Solver(object):
             # quantum generator
             edges_hat, nodes_hat = self.G(z)
             # end of quantum generator
-            ax_fake_tensor = upper(edges_hat, nodes_hat) #// Q dis
-            logits_fake = self.D(ax_fake_tensor)         #// Q dis
-            # logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)   #// C dis
+            # ax_fake_tensor = upper(edges_hat, nodes_hat) #// Q dis
+            # logits_fake = self.D(ax_fake_tensor)         #// Q dis
+            logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)   #// C dis
             
-            target_fake = torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
-            target_fake = self.label2onehot(target_fake, 2)
+            target_fake = torch.ones((ax_tensor.shape[0],  1)).to(self.device).long() if self.wasserstein else torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
+            # target_fake = self.label2onehot(target_fake, 2)
 
             # Value losses (RL)
             # value_logit_real, _ = self.V(a_tensor, None, x_tensor, torch.sigmoid)
