@@ -3,11 +3,14 @@ import pennylane as qml
 import torch.nn as nn
 
 # Quantum variables
-n_qubits = 5#4  # Total number of qubits / N
+n_qubits = 4  # Total number of qubits / N #( 5 for patch_multiplier = 3; 4 for patch_multiplier = 1)
 n_a_qubits = 1  # Number of ancillary qubits / N_A
 q_depth = 6  # Depth of the parameterised quantum circuit / D
 n_generators = 45#90  # Number of subgenerators for the patch method / N_G# -*- coding: utf-8 -*-
-patch_multiplier = 3
+patch_multiplier = 1
+bond_matrix_size = 9
+upper_triangle_number = (bond_matrix_size * bond_matrix_size - bond_matrix_size)//2
+output_size_subGen = 5
 # Quantum simulator
 # dev = qml.device("lightning.qubit", wires=n_qubits)
 dev = qml.device("default.qubit", wires=n_qubits)
@@ -37,7 +40,7 @@ def quantum_circuit(noise, weights):
 
 # For further info on how the non-linear transform is implemented in Pennylane
 # https://discuss.pennylane.ai/t/ancillary-subsystem-measurement-then-trace-out/1532
-def partial_measure(noise, weights):
+def partial_measure(noise, weights, p_size):
     # Non-linear Transform
     probs = quantum_circuit(noise, weights)
     # probsgiven0 = probs[: (2 ** (n_qubits - n_a_qubits))]
@@ -47,18 +50,28 @@ def partial_measure(noise, weights):
     # probsgiven = probsgiven0 / torch.max(probsgiven0)
     # return probsgiven
     
-    ''' singular generator
-    probsgiven5 = probs[:5]
+
+    probsgiven5 = probs[:p_size]
     probsgiven5 /= torch.sum(probs)
-    return torch.nn.functional.softmax(probsgiven5, -1)
-    '''
+    return torch.nn.functional.softmax(probsgiven5, -1).float().unsqueeze(0)
+
+
+def partial_measure_3(noise, weights, p_size):
+    # Non-linear Transform
+    probs = quantum_circuit(noise, weights)
+    # probsgiven0 = probs[: (2 ** (n_qubits - n_a_qubits))]
+    # probsgiven0 /= torch.sum(probs)
+
+    # Post-Processing
+    # probsgiven = probsgiven0 / torch.max(probsgiven0)
+    # return probsgiven
     
-    probsgiven15 = probs[:15]
+    probsgiven15 = probs[:p_size*3]
     probsgiven15 /= torch.sum(probs)
     q = torch.nn.functional.softmax(probsgiven15, -1)
-    return torch.cat((q[:5].float().unsqueeze(0)*patch_multiplier, q[5:10].float().unsqueeze(0)*patch_multiplier, q[10:15].float().unsqueeze(0)*patch_multiplier),0)
-
-
+    return torch.cat((q[:p_size].float().unsqueeze(0)*patch_multiplier, q[p_size:p_size*2].float().unsqueeze(0)*patch_multiplier, q[p_size*2:p_size*3].float().unsqueeze(0)*patch_multiplier),0)
+    
+    
 class PatchQuantumGenerator(nn.Module):
     """Quantum generator class for the patch method"""
 
@@ -83,7 +96,7 @@ class PatchQuantumGenerator(nn.Module):
 
     def forward(self, x):
         # Size of each sub-generator output
-        patch_size = 5#2 ** (n_qubits - n_a_qubits)
+        patch_size = output_size_subGen#2 ** (n_qubits - n_a_qubits)
 
         # Create a Tensor to 'catch' a batch of images from the for loop. x.size(0) is the batch size.
         # images = torch.Tensor(x.size(0), 0).to(device)
@@ -147,21 +160,23 @@ class PatchQuantumGenerator(nn.Module):
         '''
         edges = torch.Tensor(x.size(0), 0).to(device)
         nodes = torch.Tensor(x.size(0), 0).to(device)
-        a = torch.triu_indices(9, 9, offset=1)
+        a = torch.triu_indices(bond_matrix_size, bond_matrix_size, offset=1)
+        if patch_multiplier not in [1, 3]:
+            print("patch measurement undefined!!")
         for jj, elem in enumerate(x):
             patches_edges_list = []
             patches_nodes = torch.Tensor(0, patch_size).to(device)
             for ii, params in enumerate(self.q_params):
-                q_out = partial_measure(elem, params)
-                if ii < 12:
+                q_out=partial_measure(elem, params, patch_size) if patch_multiplier==1 else partial_measure_3(elem, params, patch_size)
+                if ii < (upper_triangle_number)//patch_multiplier:
                     patches_edges_list.append(q_out)
                 else:
                     patches_nodes = torch.cat((patches_nodes, q_out))
-            edge = torch.empty(9,9,5)
+            edge = torch.empty(bond_matrix_size,bond_matrix_size,patch_size)
             for ii, q in enumerate(torch.cat(tuple(patches_edges_list))):
                 row = a[0][ii]; col = a [1][ii]
                 edge[row][col][:] = q; edge[col][row][:] = q
-            node =  torch.reshape(patches_nodes, (9,5))
+            node =  torch.reshape(patches_nodes, (bond_matrix_size,patch_size))
             if jj == 0: 
                 edges =  edge
                 nodes =  node

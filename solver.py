@@ -47,7 +47,7 @@ class Solver(object):
         self.log = log
         
         # loss
-        self.wasserstein = True
+        self.wasserstein = True # True only for C dis
         # Data loader
         self.data = SparseMolecularDataset()
         self.data.load(config.mol_data_dir)
@@ -166,7 +166,7 @@ class Solver(object):
         # Optimizers can be RMSprop or Adam
         self.g_optimizer = torch.optim.RMSprop(self.G.parameters(), self.g_lr)
         self.d_optimizer = torch.optim.RMSprop(self.D.parameters(), self.d_lr)
-        # self.d_optimizer = torch.optim.SGD(self.D.parameters(), lr=0.18) #0.2
+        # self.d_optimizer = torch.optim.SGD(self.D.parameters(), lr=0.2) #0.2
         # self.v_optimizer = torch.optim.RMSprop(self.V.parameters(), self.g_lr)
 
         # Print the networks
@@ -430,7 +430,7 @@ class Solver(object):
             logits_real, features_real = self.D(a_tensor, None, x_tensor) #// C dis
             # logits_real = self.D(ax_tensor)   #// Q dis
             target_real = (torch.ones((ax_tensor.shape[0],  1))*-1).to(self.device).long() if self.wasserstein else torch.ones((ax_tensor.shape[0],  1)).to(self.device).long()
-            # target_real = self.label2onehot(target_real, 2)
+            # target_real = self.label2onehot(target_real, 2) #// Q dis
             # Z-to-target
             
 # =============================================================================
@@ -447,7 +447,7 @@ class Solver(object):
             # logits_fake = self.D(ax_fake_tensor)   #// Q dis
             logits_fake, features_fake = self.D(edges_hat, None, nodes_hat) # // C dis      
             target_fake = torch.ones((ax_tensor.shape[0],  1)).to(self.device).long() if self.wasserstein else torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
-            # target_fake = self.label2onehot(target_fake, 2)
+            # target_fake = self.label2onehot(target_fake, 2) #// Q dis
 
             '''
             # Compute losses for gradient penalty
@@ -463,7 +463,7 @@ class Solver(object):
             '''
             d_loss_real = d_loss(logits_real, target_real)
             d_loss_fake = d_loss(logits_fake, target_fake)
-            loss_D = torch.mean(d_loss_fake) - torch.mean(d_loss_real) if self.wasserstein else d_loss_real + d_loss_fake #modified for wasserstein
+            loss_D = torch.mean(d_loss_fake) - torch.mean(d_loss_real) if self.wasserstein else (d_loss_real + d_loss_fake) #modified for wasserstein
 
             if cur_la > 0:
                 losses['D/loss_real'].append(d_loss_real.item())
@@ -528,7 +528,7 @@ class Solver(object):
             logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)   #// C dis
             
             target_fake = torch.ones((ax_tensor.shape[0],  1)).to(self.device).long() if self.wasserstein else torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
-            # target_fake = self.label2onehot(target_fake, 2)
+            # target_fake = self.label2onehot(target_fake, 2) #// Q dis
 
             # Value losses (RL)
             # value_logit_real, _ = self.V(a_tensor, None, x_tensor, torch.sigmoid)
