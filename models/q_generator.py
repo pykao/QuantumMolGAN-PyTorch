@@ -172,7 +172,7 @@ class PatchQuantumGenerator(nn.Module):
                     patches_edges_list.append(q_out)
                 else:
                     patches_nodes = torch.cat((patches_nodes, q_out))
-            edge = torch.empty(bond_matrix_size,bond_matrix_size,patch_size)
+            edge = torch.empty(bond_matrix_size,bond_matrix_size,patch_size).to(device)
             for ii, q in enumerate(torch.cat(tuple(patches_edges_list))):
                 row = a[0][ii]; col = a [1][ii]
                 edge[row][col][:] = q; edge[col][row][:] = q

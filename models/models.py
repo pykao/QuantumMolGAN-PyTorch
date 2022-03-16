@@ -61,6 +61,7 @@ class Discriminator(nn.Module):
 
     def forward(self, adjacency_tensor, hidden, node, activation=None):
         adj = adjacency_tensor[:, :, :, 1:].permute(0, 3, 1, 2)
+        adj = torch.nan_to_num(adj)
         h = self.gcn_layer(node, adj, hidden)
         h = self.agg_layer(node, h, hidden)
         #h = self.agg_layer(h, node, hidden)
