@@ -9,8 +9,9 @@ from utils.utils_io import get_date_postfix
 # Remove flooding logs
 lg = RDLogger.logger()
 lg.setLevel(RDLogger.CRITICAL)
-
-from solver import Solver
+from solver_l import Solver
+#from solver import Solver
+#from solver_test import Solver
 from torch.backends import cudnn
 
 import pennylane as qml
@@ -76,7 +77,7 @@ if __name__ == '__main__':
     config = get_GAN_config()
 
     # GPU
-    os.environ["CUDA_VISIBLE_DEVICES"]="1"
+    # os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 
     # Dataset
@@ -96,7 +97,7 @@ if __name__ == '__main__':
     config.update_qc = False
     # the learning rate of quantum circuit
     # None: same learning rate as g_lr
-    config.qc_lr = 0.04
+    config.qc_lr = 0.001#0.04
     # to use pretrained quantum circuit or not
     # config.qc_pretrained = False
 
@@ -106,21 +107,20 @@ if __name__ == '__main__':
     # the complexity of generator
     config.complexity = 'mr'
     # batch size
-    config.batch_size = 32
+    config.batch_size = 128
     # input noise dimension
     config.z_dim = 8
     # number of epoch
     config.num_epochs = 300
     # n_critic
-    config.n_critic = 3
+    config.n_critic = 5
     # critic type
-    config.critic_type = 'G'
+    config.critic_type = 'D'
     # 1.0 for pure WGAN and 0.0 for pure RL
     config.lambda_wgan = 1
     # weight decay
     config.decay_every_epoch = 60
     config.gamma = 0.1
-
 
     # Testing
     #config.mode = "test"
@@ -132,8 +132,12 @@ if __name__ == '__main__':
     #config.saving_dir = r"results/GAN/20211014_151730/train"
     # Quantum
     #config.saving_dir = r"results/quantum-GAN/20211130_102404/train"
-
-
+    '''
+    config.saving_dir = r"results/GAN/20220205_042038/train"
+    config.test_epoch = 10
+    config.mode = "test"
+    config.test_sample_size = 10000
+    '''
     if config.complexity == 'nr':
         config.g_conv_dim = [128, 256, 512]
     elif config.complexity == 'mr':
