@@ -326,13 +326,6 @@ class Solver(object):
         mols = [self.data.matrices2mol(n_.data.cpu().numpy(), e_.data.cpu().numpy(), strict=True) for e_, n_ in zip(edges_hard, nodes_hard)]
         return mols
 
-    def get_gen_mols_hat(self, n_hat, e_hat, method):
-        """Convert edges and nodes matrices into molecules"""
-        (edges_hard, nodes_hard) = e_hat, n_hat
-        edges_hard, nodes_hard = torch.max(edges_hard, -1)[1], torch.max(nodes_hard, -1)[1]
-        mols = [self.data.matrices2mol(n_.data.cpu().numpy(), e_.data.cpu().numpy(), strict=True) for e_, n_ in zip(edges_hard, nodes_hard)]
-        return mols
-    
     def get_reward(self, n_hat, e_hat, method):
         """Get the reward from edges and nodes matrices"""
         (edges_hard, nodes_hard) = self.postprocess((e_hat, n_hat), method)
@@ -387,7 +380,7 @@ class Solver(object):
             # non-Quantum part
             if train_val_test == 'val' and not self.quantum:
                 if self.test_sample_size is None:
-                    mols, _, _, a, x, _, _, _, _ = self.data.next_validation_batch(1280*4)
+                    mols, _, _, a, x, _, _, _, _ = self.data.next_validation_batch()
                     z = self.sample_z(a.shape[0])
                 else:
                     mols, _, _, a, x, _, _, _, _ = self.data.next_validation_batch(self.test_sample_size)
@@ -643,7 +636,7 @@ class Solver(object):
 
             # Get scores
             if train_val_test == 'val':
-                mols = self.get_gen_mols_hat(nodes_hat, edges_hat, self.post_method)
+                mols = self.get_gen_mols(nodes_logits, edges_logits, self.post_method)
                 m0, m1 = all_scores(mols, self.data, norm=True)  # 'mols' is output of Fake Reward
                 for k, v in m1.items():
                     scores[k].append(v)
