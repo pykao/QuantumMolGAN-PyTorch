@@ -15,7 +15,7 @@ output_size_subGen = 5
 # dev = qml.device("lightning.qubit", wires=n_qubits)
 dev = qml.device("default.qubit", wires=n_qubits)
 # Enable CUDA device if available
-device = torch.device("cpu")#torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu")#torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 @qml.qnode(dev, interface="torch", diff_method="backprop")
 def quantum_circuit(noise, weights):
@@ -52,6 +52,7 @@ def partial_measure(noise, weights, p_size):
     
 
     probsgiven5 = probs[:p_size]
+    #a = 1/torch.sum(probs)
     probsgiven5 /= torch.sum(probs)
     return torch.nn.functional.softmax(probsgiven5, -1).float().unsqueeze(0)
 
@@ -158,33 +159,54 @@ class PatchQuantumGenerator(nn.Module):
                 edges_nodes = torch.cat((edges_nodes, torch.unsqueeze( edge_node, 0 ) ), 0) 
         return edges_nodes
         '''
-        edges = torch.Tensor(x.size(0), 0).to(device)
-        nodes = torch.Tensor(x.size(0), 0).to(device)
+        edges = torch.Tensor(x.size(0), 0)#.to(device)
+        nodes = torch.Tensor(x.size(0), 0)#.to(device)
+        
+        edges_GT = torch.Tensor(x.size(0), 0)#.to(device)
+        nodes_GT = torch.Tensor(x.size(0), 0)#.to(device)
         a = torch.triu_indices(bond_matrix_size, bond_matrix_size, offset=1)
+        q_t = None
         if patch_multiplier not in [1, 3]:
             print("patch measurement undefined!!")
         for jj, elem in enumerate(x):
             patches_edges_list = []
-            patches_nodes = torch.Tensor(0, patch_size).to(device)
+            # patches_edges_list_GT = []
+            patches_nodes = torch.Tensor(0, patch_size)#.to(device)
+            patches_nodes_GT = torch.Tensor(0, patch_size)#.to(device)
             for ii, params in enumerate(self.q_params):
                 q_out=partial_measure(elem, params, patch_size) if patch_multiplier==1 else partial_measure_3(elem, params, patch_size)
+                if q_t is None: 
+                    q_t = torch.zeros_like(q_out)
+                    q_t[0][-1] = 1
+                    # q_t = torch.nn.functional.softmax(q_t[0], -1).float().unsqueeze(0)
                 if ii < (upper_triangle_number)//patch_multiplier:
                     patches_edges_list.append(q_out)
+                    # patches_edges_list_GT.append(q_t)
                 else:
                     patches_nodes = torch.cat((patches_nodes, q_out))
-            edge = torch.empty(bond_matrix_size,bond_matrix_size,patch_size).to(device)
+                    patches_nodes_GT = torch.cat((patches_nodes_GT, q_t))
+            edge = torch.zeros(bond_matrix_size,bond_matrix_size,patch_size)#.to(device)
+            edge_GT = torch.zeros(bond_matrix_size,bond_matrix_size,patch_size)#.to(device)
             for ii, q in enumerate(torch.cat(tuple(patches_edges_list))):
                 row = a[0][ii]; col = a [1][ii]
                 edge[row][col][:] = q; edge[col][row][:] = q
+                edge_GT[row][col][:] = q_t; edge_GT[col][row][:] = q_t
             node =  torch.reshape(patches_nodes, (bond_matrix_size,patch_size))
+            node_GT =  torch.reshape(patches_nodes_GT, (bond_matrix_size,patch_size))
             if jj == 0: 
                 edges =  edge
                 nodes =  node
+                edges_GT =  edge_GT
+                nodes_GT =  node_GT
             elif jj == 1:
                 edges = torch.stack((edges, edge), 0) 
                 nodes = torch.stack((nodes, node), 0)
+                edges_GT = torch.stack((edges_GT, edge_GT), 0) 
+                nodes_GT = torch.stack((nodes_GT, node_GT), 0)
             else: 
                 edges = torch.cat((edges, torch.unsqueeze( edge,0)), 0) 
                 nodes = torch.cat((nodes, torch.unsqueeze( node,0)), 0)
-        return edges, nodes
+                edges_GT = torch.cat((edges_GT, torch.unsqueeze( edge_GT,0)), 0) 
+                nodes_GT = torch.cat((nodes_GT, torch.unsqueeze( node_GT,0)), 0)
+        return edges, nodes, edges_GT, nodes_GT
                     
