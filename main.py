@@ -106,7 +106,7 @@ if __name__ == '__main__':
     # the complexity of generator
     config.complexity = 'mr'
     # batch size
-    config.batch_size = 128
+    config.batch_size = 16
     # input noise dimension
     config.z_dim = 8
     # number of epoch
