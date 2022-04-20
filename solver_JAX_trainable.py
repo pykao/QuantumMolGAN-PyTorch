@@ -22,17 +22,16 @@ from utils.logger import Logger
 from q_discriminator import HybridModel
 
 from frechetdist import frdist
-import jax, optax
-import jax.numpy as jnp
+
 def upper(m, a):
-    res = jnp.zeros((m.shape[0], 36, 5)).long()#.to(m.device).long()
+    res = torch.zeros((m.shape[0], 36, 5)).to(m.device).long()
     for i in range(m.shape[0]):
         for j in range(5):
             tmp_m = m[i, :, :, j]
-            idx = jnp.triu_indices(9,offset = 1)
+            idx = torch.triu_indices(9, 9,offset = 1)
 
             res[i, :, j] = tmp_m[list(idx)]
-    res = jnp.concatenate((res, a), dim=1)
+    res = torch.cat((res, a), dim=1)
     return res        
 
 def wasserstein_loss(y_true, y_pred):
@@ -43,7 +42,7 @@ class Solver(object):
 
     def __init__(self, config, log=None):
         """Initialize configurations"""
-        self.key = jax.random.PRNGKey(0)
+
         # Log
         self.log = log
         
@@ -108,7 +107,7 @@ class Solver(object):
             self.logger = Logger(config.log_dir_path)
 
         # GPU
-        self.device = torch.device('cpu')# torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device("cpu")#torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print('Device: ', self.device, flush = True)
 
         # Directories
@@ -153,23 +152,24 @@ class Solver(object):
         """Create a generator, a discriminator and a v net"""
 
         # Models
-        self.G = PatchQuantumGenerator()
+
+        self.G = PatchQuantumGenerator(n_generators=45)
         self.D = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
-        self.variables = self.G.init(self.key, jnp.ones((self.batch_size, self.z_dim)))        
+
 
         # Optimizers can be RMSprop or Adam
-        self.g_optimizer = optax.rmsprop(self.g_lr)#torch.optim.RMSprop(self.G.parameters(), self.g_lr)
-        self.d_optimizer = optax.rmsprop(self.d_lr)#torch.optim.RMSprop(self.D.parameters(), self.d_lr)
+        self.g_optimizer = torch.optim.RMSprop(self.G.parameters(), self.g_lr)
+        self.d_optimizer = torch.optim.RMSprop(self.D.parameters(), self.d_lr)
 
         # Print the networks
-        #self.print_network(self.G, 'G', self.log)
-        #self.print_network(self.D, 'D', self.log)
+        self.print_network(self.G, 'G', self.log)
+        self.print_network(self.D, 'D', self.log)
         # self.print_network(self.V, 'V', self.log)
         print("in JAX solver")
 
         # Bring the network to GPU
-        #self.G.to(self.device)
-        #self.D.to(self.device)
+        self.G.to(self.device)
+        self.D.to(self.device)
         # self.V.to(self.device)
 
     @staticmethod
@@ -229,7 +229,7 @@ class Solver(object):
 
     def label2onehot(self, labels, dim):
         """Convert label indices to one-hot vectors"""
-        out = jnp.zeros(list(labels.size()) + [dim])#.to(self.device)
+        out = torch.zeros(list(labels.size()) + [dim]).to(self.device)
         out.scatter_(len(out.size()) - 1, labels.unsqueeze(-1), 1.)
         return out
 
@@ -350,9 +350,6 @@ class Solver(object):
         print('Saved model checkpoints into {}...'.format(self.model_dir_path))
         if self.log is not None:
             self.log.info('Saved model checkpoints into {}...'.format(self.model_dir_path))
-    
-    def loss_for_JAX(self, results1, GT1, results2, GT2):
-            return jnp.mean(jnp.linalg(result1-GT1)+jnp.linalg(result2,GT2))
 
     def train_or_valid(self, epoch_i, train_val_test='val'):
         """Train or valid function"""
@@ -377,13 +374,13 @@ class Solver(object):
                 print('[Testing]')
             else:
                 raise NotImplementedError
-        #d_loss = optax.l1_loss()#torch.nn.L1Loss() #modified for wasserstein
+        d_loss = torch.nn.L1Loss() #modified for wasserstein
         for a_step in range(the_step):
 
             # non-Quantum part
             if train_val_test == 'val' and not self.quantum:
                 if self.test_sample_size is None:
-                    mols, _, _, a, x, _, _, _, _ = self.data.next_validation_batch(1280*2)
+                    mols, _, _, a, x, _, _, _, _ = self.data.next_validation_batch(1280*4)
                     z = self.sample_z(a.shape[0])
                 else:
                     mols, _, _, a, x, _, _, _, _ = self.data.next_validation_batch(self.test_sample_size)
@@ -409,17 +406,17 @@ class Solver(object):
                 raise NotImplementedError
 
             ########## Preprocess input data ##########
-            a = jnp.array(a)#torch.from_numpy(a).to(self.device).long() # adjacency
-            x = jnp.array(x)#torch.from_numpy(x).to(self.device).long() # node
-            #a_tensor = self.label2onehot(a, self.b_dim)
-            #x_tensor = self.label2onehot(x, self.m_dim)
+            a = torch.from_numpy(a).to(self.device).long() # adjacency
+            x = torch.from_numpy(x).to(self.device).long() # node
+            a_tensor = self.label2onehot(a, self.b_dim)
+            x_tensor = self.label2onehot(x, self.m_dim)
             
-            #ax_tensor = upper(a_tensor, x_tensor)
+            ax_tensor = upper(a_tensor, x_tensor)
 
             if self.quantum:
                 z = torch.stack(tuple(sample_list)).to(self.device).float()
             else:
-                z = jnp.array(z)#torch.from_numpy(z).to(self.device).float()
+                z = torch.from_numpy(z).to(self.device).float()
 
             # tensorboard
             loss_tb = {}
@@ -495,7 +492,7 @@ class Solver(object):
             # Z-to-target
 
             # quantum generator
-            edges_hat, nodes_hat, edges_hat_GT, nodes_hat_GT = self.G.apply(self.variables, z)
+            edges_hat, nodes_hat, edges_hat_GT, nodes_hat_GT = self.G(z)
             # end of quantum generator
             # logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)   #// C dis
             
@@ -504,12 +501,12 @@ class Solver(object):
 
             # Losses Update
             # loss_G = -1* d_loss(logits_fake, target_fake)#-logits_fake #modified for wasserstein
-            #loss_G = 1* (d_loss(edges_hat, edges_hat_GT) + d_loss(nodes_hat, nodes_hat_GT))
+            loss_G = 1* (d_loss(edges_hat, edges_hat_GT) + d_loss(nodes_hat, nodes_hat_GT))
             # print(edges_hat[0], edges_hat_GT[1], edges_hat.shape, edges_hat_GT.shape)
             # print(nodes_hat[0], nodes_hat_GT[1], nodes_hat.shape, nodes_hat_GT.shape)
             # print(torch.sum(torch.abs(edges_hat-edges_hat_GT)))
             # print(torch.sum(torch.abs(nodes_hat-nodes_hat_GT)))
-            loss_G = self.loss_for_JAX(edges_hat, nodes_hat, edges_hat_GT, nodes_hat_GT)
+            loss_G = torch.mean(loss_G)
             losses['G/loss'].append(loss_G.item())
 
 
@@ -521,15 +518,11 @@ class Solver(object):
             print('======================= {} =============================='.format(datetime.datetime.now()), flush = True)
             # alpha = torch.abs(loss_G.detach() / loss_RL.detach()).detach()
             train_step_G = cur_la * loss_G# + (1.0 - cur_la) * alpha * loss_RL
-            grads = jax.grad(loss_G)(edges_hat, nodes_hat, edges_hat_GT, nodes_hat_GT)
-            # Compute parameters updates based on gradients and optimiser state
-            updates, opt_state = opt.update(grads, opt_state)
-            # Apply updates to parameters
-            posterior = optix.apply_updates(params, updates)
+
             # train_step_V = loss_V
-            #self.reset_grad()
-            #train_step_G.backward(retain_graph=True)
-            #self.g_optimizer.step()
+            self.reset_grad()
+            train_step_G.backward(retain_graph=True)
+            self.g_optimizer.step()
             # Optimise generator and reward network
             # if train_val_test == 'train':
             #     if self.critic_type == 'D':
