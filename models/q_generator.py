@@ -52,7 +52,8 @@ def partial_measure(noise, weights, p_size):
     
 
     probsgiven5 = probs[:p_size]
-    probsgiven5 /= torch.sum(probs)
+    a = torch.sum(probs)
+    probsgiven5 /= a
     return torch.nn.functional.softmax(probsgiven5, -1).float().unsqueeze(0)
 
 
