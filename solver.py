@@ -18,7 +18,6 @@ from models.models import Generator, Discriminator
 from data.sparse_molecular_dataset import SparseMolecularDataset
 from utils.logger import Logger
 
-from q_discriminator import HybridModel
 
 from frechetdist import frdist
 
@@ -152,15 +151,13 @@ class Solver(object):
                            self.data.bond_num_types,
                            self.data.atom_num_types,
                            self.dropout)
-        #self.D = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
-        #self.V = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
-        self.D = HybridModel(LAYER3=True)
+        
+        self.D = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
         self.V = Discriminator(self.d_conv_dim, self.m_dim, self.b_dim - 1, self.dropout)
 
         # Optimizers can be RMSprop or Adam
         self.g_optimizer = torch.optim.RMSprop(self.G.parameters(), self.g_lr)
-        #self.d_optimizer = torch.optim.RMSprop(self.D.parameters(), self.d_lr)
-        self.d_optimizer = torch.optim.SGD(self.D.parameters(), lr=0.2) #0.2
+        self.d_optimizer = torch.optim.RMSprop(self.D.parameters(), self.d_lr)
         self.v_optimizer = torch.optim.RMSprop(self.V.parameters(), self.g_lr)
 
         # Print the networks
@@ -368,7 +365,7 @@ class Solver(object):
                 print('[Testing]')
             else:
                 raise NotImplementedError
-        d_loss = torch.nn.L1Loss()
+        
         for a_step in range(the_step):
 
             # non-Quantum part
@@ -421,22 +418,15 @@ class Solver(object):
             ########## Train the discriminator ##########
         
             # compute loss with real inputs
-            #logits_real, features_real = self.D(a_tensor, None, x_tensor)
-            logits_real = self.D(ax_tensor)
-            target_real = torch.ones((ax_tensor.shape[0],  1)).to(self.device).long()
-            target_real = self.label2onehot(target_real, 2)
+            logits_real, features_real = self.D(a_tensor, None, x_tensor)
             
             # Z-to-target
             edges_logits, nodes_logits = self.G(z)
             # Postprocess with Gumbel softmax
             (edges_hat, nodes_hat) = self.postprocess((edges_logits, nodes_logits), self.post_method)
-            #logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)
-            ax_fake_tensor = upper(edges_hat, nodes_hat)            
-            logits_fake = self.D(ax_fake_tensor) 
-            target_fake = torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
-            target_fake = self.label2onehot(target_fake, 2)
+            
+            logits_fake, features_fake = self.D(edges_hat, None, nodes_hat) 
 
-            '''
             # Compute losses for gradient penalty
             eps = torch.rand(logits_real.size(0), 1, 1, 1).to(self.device)
             x_int0 = (eps * a_tensor + (1. - eps) * edges_hat).requires_grad_(True)
@@ -447,21 +437,18 @@ class Solver(object):
             d_loss_real = torch.mean(logits_real)
             d_loss_fake = torch.mean(logits_fake)
             loss_D = -d_loss_real + d_loss_fake + self.la_gp * grad_penalty
-            '''
-            d_loss_real = d_loss(logits_real, target_real)
-            d_loss_fake = d_loss(logits_fake, target_fake)
-            loss_D = d_loss_real + d_loss_fake 
+            
 
             if cur_la > 0:
                 losses['D/loss_real'].append(d_loss_real.item())
                 losses['D/loss_fake'].append(d_loss_fake.item())
-                #losses['D/loss_gp'].append(grad_penalty.item())
+                losses['D/loss_gp'].append(grad_penalty.item())
                 losses['D/loss'].append(loss_D.item())
 
                 # tensorboard
                 loss_tb['D/loss_real'] = d_loss_real.item()
                 loss_tb['D/loss_fake'] = d_loss_fake.item()
-                #loss_tb['D/loss_gp'] = grad_penalty.item()
+                loss_tb['D/loss_gp'] = grad_penalty.item()
                 loss_tb['D/loss'] = loss_D.item()
 
             # Optimise discriminator
@@ -472,37 +459,21 @@ class Solver(object):
                         self.reset_grad()
                         loss_D.backward()
                         self.d_optimizer.step()
-                        '''
-                        ### here is to check discriminator gradient value ###
-                        for i, param in enumerate(self.D.parameters()):
-                            print(param.grad)
-                            break
-                        print('optimizing D')
-                        #####################################################
-                        '''
-                        for name, param in self.G.named_parameters():
-                            if param.requires_grad:
-                                print (name, param.grad)
-                            break
-                        print("'optimizing G")
                 else:
                     # training G for n_critic-1 times followed by D one time
                     if (cur_step != 0) and (cur_step % self.n_critic == 0):
                         self.reset_grad()
                         loss_D.backward()
                         self.d_optimizer.step()
-                        print('-') 
+
             ########## Train the generator ##########
 
             # Z-to-target
             edges_logits, nodes_logits = self.G(z)
             # Postprocess with Gumbel softmax
             (edges_hat, nodes_hat) = self.postprocess((edges_logits, nodes_logits), self.post_method)
-            #logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)
-            ax_fake_tensor = upper(edges_hat, nodes_hat)            
-            logits_fake = self.D(ax_fake_tensor) 
-            target_fake = torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
-            target_fake = self.label2onehot(target_fake, 2)
+            
+            logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)
 
             # Value losses (RL)
             value_logit_real, _ = self.V(a_tensor, None, x_tensor, torch.sigmoid)
@@ -518,7 +489,7 @@ class Solver(object):
             reward_f = self.get_reward(nodes_hat, edges_hat, self.post_method)
 
             # Losses Update
-            loss_G = -1* d_loss(logits_fake, target_fake)#-logits_fake
+            loss_G = -logits_fake
             # Original TF loss_V. Here we use absolute values instead of the squared one.
             # loss_V = (value_logit_real - reward_r) ** 2 + (value_logit_fake - reward_f) ** 2
             loss_V = torch.abs(value_logit_real - reward_r) + torch.abs(value_logit_fake - reward_f)
@@ -608,7 +579,8 @@ class Solver(object):
 
 
             # Get scores
-            if train_val_test == 'val':
+            # if train_val_test == 'val':
+            if a_step % 10 == 0:
                 mols = self.get_gen_mols(nodes_logits, edges_logits, self.post_method)
                 m0, m1 = all_scores(mols, self.data, norm=True)  # 'mols' is output of Fake Reward
                 for k, v in m1.items():
