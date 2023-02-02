@@ -17,12 +17,18 @@ from utils.utils import *
 from models.models import Generator, Discriminator
 from data.sparse_molecular_dataset import SparseMolecularDataset
 from utils.logger import Logger
-
-from q_discriminator_v2 import HybridModel
+from torch.autograd import Variable
+from q_discriminator_v2_wgan import HybridModel
 
 from frechetdist import frdist
 
 def upper(m, a):
+    m = m.view(m.shape[0], -1)
+    a = a.view(a.shape[0], -1)
+    res = torch.cat((m, a), dim=1)
+    return res
+
+def upper_(m, a):
     res = torch.zeros((m.shape[0], 36, 5)).to(m.device).long()
     for i in range(m.shape[0]):
         for j in range(5):
@@ -102,7 +108,7 @@ class Solver(object):
             self.logger = Logger(config.log_dir_path)
 
         # GPU
-        #self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.device = 'cpu'
         print('Device: ', self.device, flush = True)
 
@@ -161,7 +167,7 @@ class Solver(object):
         # Optimizers can be RMSprop or Adam
         self.g_optimizer = torch.optim.RMSprop(self.G.parameters(), self.g_lr)
         #self.d_optimizer = torch.optim.RMSprop(self.D.parameters(), self.d_lr)
-        self.d_optimizer = torch.optim.SGD(self.D.parameters(), lr=0.1) #0.2
+        self.d_optimizer = torch.optim.SGD(self.D.parameters(), lr=1e-4) #0.2
         self.v_optimizer = torch.optim.RMSprop(self.V.parameters(), self.g_lr)
 
         # Print the networks
@@ -224,7 +230,8 @@ class Solver(object):
                                    grad_outputs=weight,
                                    retain_graph=True,
                                    create_graph=True,
-                                   only_inputs=True)[0]
+                                   only_inputs=True,
+                                   allow_unused=True)[0]
         dydx = dydx.view(dydx.size(0), -1)
         dydx_l2norm = torch.sqrt(torch.sum(dydx ** 2, dim=1))
         return torch.mean((dydx_l2norm - 1) ** 2)
@@ -369,6 +376,9 @@ class Solver(object):
                 print('[Testing]')
             else:
                 raise NotImplementedError
+
+        # For w loss:
+        clamp_num=0.01
         d_loss = torch.nn.L1Loss()
         for a_step in range(the_step):
 
@@ -400,6 +410,12 @@ class Solver(object):
             else:
                 raise NotImplementedError
 
+            #for wgan:
+            for parm in self.D.parameters():
+                parm.data.clamp_(-clamp_num, clamp_num)
+
+
+
             ########## Preprocess input data ##########
             a = torch.from_numpy(a).to(self.device).long() # adjacency
             x = torch.from_numpy(x).to(self.device).long() # node
@@ -407,7 +423,6 @@ class Solver(object):
             x_tensor = self.label2onehot(x, self.m_dim)
             
             ax_tensor = upper(a_tensor, x_tensor)
-
             if self.quantum:
                 z = torch.stack(tuple(sample_list)).to(self.device).float()
             else:
@@ -424,33 +439,28 @@ class Solver(object):
             # compute loss with real inputs
             #logits_real, features_real = self.D(a_tensor, None, x_tensor)
             logits_real = self.D(ax_tensor)
-            target_real = torch.ones((ax_tensor.shape[0],  1)).to(self.device).long()
-            target_real = self.label2onehot(target_real, 2)
             
             # Z-to-target
             edges_logits, nodes_logits = self.G(z)
             # Postprocess with Gumbel softmax
             (edges_hat, nodes_hat) = self.postprocess((edges_logits, nodes_logits), self.post_method)
-            #logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)
             ax_fake_tensor = upper(edges_hat, nodes_hat)            
             logits_fake = self.D(ax_fake_tensor) 
-            target_fake = torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
-            target_fake = self.label2onehot(target_fake, 2)
 
             '''
             # Compute losses for gradient penalty
             eps = torch.rand(logits_real.size(0), 1, 1, 1).to(self.device)
             x_int0 = (eps * a_tensor + (1. - eps) * edges_hat).requires_grad_(True)
             x_int1 = (eps.squeeze(-1) * x_tensor + (1. - eps.squeeze(-1)) * nodes_hat).requires_grad_(True)
-            grad0, grad1 = self.D(x_int0, None, x_int1)
+            grad_tensor = upper(x_int0, x_int1)
+            grad0 = self.D(grad_tensor)
             grad_penalty = self.gradient_penalty(grad0, x_int0) + self.gradient_penalty(grad0, x_int1)
-                        
+            '''         
             d_loss_real = torch.mean(logits_real)
             d_loss_fake = torch.mean(logits_fake)
-            loss_D = -d_loss_real + d_loss_fake + self.la_gp * grad_penalty
-            '''
-            d_loss_real = d_loss(logits_real, target_real)
-            d_loss_fake = d_loss(logits_fake, target_fake)
+            loss_D = -d_loss_real + d_loss_fake #+ self.la_gp * grad_penalty
+            #'''
+            
             loss_D = d_loss_real + d_loss_fake 
 
             if cur_la > 0:
@@ -480,6 +490,8 @@ class Solver(object):
                             break
                         print('optimizing D')
                         #####################################################
+                        '''
+                        '''
                         for name, param in self.G.named_parameters():
                             if param.requires_grad:
                                 print (name, param.grad)
@@ -501,8 +513,6 @@ class Solver(object):
             #logits_fake, features_fake = self.D(edges_hat, None, nodes_hat)
             ax_fake_tensor = upper(edges_hat, nodes_hat)            
             logits_fake = self.D(ax_fake_tensor) 
-            target_fake = torch.zeros((ax_tensor.shape[0],  1)).to(self.device).long()
-            target_fake = self.label2onehot(target_fake, 2)
 
             # Value losses (RL)
             value_logit_real, _ = self.V(a_tensor, None, x_tensor, torch.sigmoid)
@@ -518,7 +528,7 @@ class Solver(object):
             reward_f = self.get_reward(nodes_hat, edges_hat, self.post_method)
 
             # Losses Update
-            loss_G = -1* d_loss(logits_fake, target_fake)#-logits_fake
+            loss_G = -1* torch.mean(logits_fake)
             # Original TF loss_V. Here we use absolute values instead of the squared one.
             # loss_V = (value_logit_real - reward_r) ** 2 + (value_logit_fake - reward_f) ** 2
             loss_V = torch.abs(value_logit_real - reward_r) + torch.abs(value_logit_fake - reward_f)
@@ -569,7 +579,13 @@ class Solver(object):
                         else:
                             train_step_G.backward(retain_graph=True)
                             self.g_optimizer.step()
-
+            '''
+            for name, param in self.G.named_parameters():
+                if param.requires_grad:
+                    print (name, param.grad)
+                    break
+                print("'optimizing G")
+            '''
             if train_val_test == 'train' and self.use_tensorboard:
                 for tag, value in loss_tb.items():
                     self.logger.scalar_summary(tag, value, cur_step)

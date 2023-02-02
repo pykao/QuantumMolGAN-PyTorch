@@ -9,9 +9,7 @@ from utils.utils_io import get_date_postfix
 # Remove flooding logs
 lg = RDLogger.logger()
 lg.setLevel(RDLogger.CRITICAL)
-from solver_l import Solver
-#from solver import Solver
-#from solver_test import Solver
+from solver import Solver
 from torch.backends import cudnn
 
 import pennylane as qml
@@ -121,23 +119,20 @@ if __name__ == '__main__':
     # weight decay
     config.decay_every_epoch = 60
     config.gamma = 0.1
-
+    
+    '''
     # Testing
-    #config.mode = "test"
-    #config.complexity = 'mr'
-    #config.test_sample_size = 5000
-    #config.z_dim = 8
-    #config.test_epoch = 30
+    config.mode = "test"
+    config.complexity = 'mr'
+    config.test_sample_size = 5000
+    config.z_dim = 8
+    config.test_epoch = 30
     # MolGAN
     #config.saving_dir = r"results/GAN/20211014_151730/train"
     # Quantum
-    #config.saving_dir = r"results/quantum-GAN/20211130_102404/train"
+    #config.saving_dir = r"results/quantum-GAN/20230202_105612/train"
     '''
-    config.saving_dir = r"results/GAN/20220205_042038/train"
-    config.test_epoch = 10
-    config.mode = "test"
-    config.test_sample_size = 10000
-    '''
+
     if config.complexity == 'nr':
         config.g_conv_dim = [128, 256, 512]
     elif config.complexity == 'mr':
