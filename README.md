@@ -9,8 +9,8 @@ Different branches contain different experiments of the paper
 | Branch Name | Noise Generator | Generator| Discriminator |
 | :-----: | :---: | :---: |  :---: |
 | main | classical/quantum   | classical   | classical|
-| v | classical/quantum   | classical   | classical/quantum|
-| g | classical/quantum   | classical/quantum   | classical/quantum|
+| discriminator | classical/quantum   | classical   | classical/quantum|
+| generator | classical/quantum   | classical/quantum   | classical/quantum|
 
 ## Environment
 
