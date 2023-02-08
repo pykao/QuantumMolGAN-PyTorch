@@ -1,8 +1,16 @@
 # QuantumGAN-PyTorch
 
-This is the PyTorch reimplementation of [Quantum Generative Models for Small Molecule Drug Discovery](https://arxiv.org/abs/2101.03438)
+This is the PyTorch reimplementation of [Exploring the Advantages of Quantum Generative Adversarial Networks in Generative Chemistry](https://arxiv.org/abs/2210.16823)
 
-The trained quantum-GAN from [the original repository](https://github.com/jundeli/quantum-gan) cannot generate reasonable molecules.
+## Branches
+
+Different branches contain different experiments of the paper
+
+| Branch Name | Noise Generator | Generator| Discriminator |
+| :-----: | :---: | :---: |  :---: |
+| main | classical/quantum   | classical   | classical|
+| discriminator | classical/quantum   | classical   | classical/quantum|
+| generator | classical/quantum   | classical/quantum   | classical/quantum|
 
 ## Environment
 
@@ -17,12 +25,6 @@ You are able to activate the environment:
 ```bash
 conda activate molgan-pt
 ```
-## To do 
-- [x] check graident behavior -> MolGAN's gradient value scale is similar to the classifier's graident value
-- [ ] check generator behavior (if it generates similar distribution as the training data)
-- [ ] freeze generator weight to see if the discriminator can converge
-- [ ] change discriinator loss function (now is using l1, maybe change to cross entropy, but the architeucre might need to be changed)
-- [ ] change architecutre in q_discriminator.py (adding more connections between first layer and the 2nd layer) 
 
 ## Download GDB-9 Dataset
 
@@ -70,6 +72,28 @@ python main.py
 ## Others
 
 `results` folder stores the log files, trained models, pretrained quantum circuits, and the testing results.
+
+## Citation
+
+```
+@misc{https://doi.org/10.48550/arxiv.2210.16823,
+  doi = {10.48550/ARXIV.2210.16823},
+  
+  url = {https://arxiv.org/abs/2210.16823},
+  
+  author = {Kao, Po-Yu and Yang, Ya-Chu and Chiang, Wei-Yin and Hsiao, Jen-Yueh and Cao, Yudong and Aliper, Alex and Ren, Feng and Aspuru-Guzik, Alan and Zhavoronkov, Alex and Hsieh, Min-Hsiu and Lin, Yen-Chu},
+  
+  keywords = {Quantum Physics (quant-ph), FOS: Physical sciences, FOS: Physical sciences},
+  
+  title = {Exploring the Advantages of Quantum Generative Adversarial Networks in Generative Chemistry},
+  
+  publisher = {arXiv},
+  
+  year = {2022},
+  
+  copyright = {Creative Commons Attribution Non Commercial No Derivatives 4.0 International}
+}
+```
 
 ## Credits
 This repository refers to the following repositories:
