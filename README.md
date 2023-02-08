@@ -1,4 +1,4 @@
-# QuantumGAN-PyTorch
+# QuantumMolGAN-PyTorch
 
 This is the PyTorch reimplementation of [Exploring the Advantages of Quantum Generative Adversarial Networks in Generative Chemistry](https://arxiv.org/abs/2210.16823)
 
